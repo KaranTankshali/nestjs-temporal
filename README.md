@@ -22,6 +22,51 @@
   <a href="#contributing">Contributing</a>
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/nest-temporal">
+    <img src="https://img.shields.io/npm/v/nest-temporal?style=for-the-badge&logo=npm&color=CB3837" alt="NPM Version" />
+  </a>
+  <a href="https://www.npmjs.com/package/nest-temporal">
+    <img src="https://img.shields.io/npm/dm/nest-temporal?style=for-the-badge&logo=npm&color=CB3837" alt="NPM Downloads" />
+  </a>
+  <a href="https://github.com/KaranTankshali/nestjs-temporal/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/KaranTankshali/nestjs-temporal?style=for-the-badge&color=green" alt="License" />
+  </a>
+  <a href="https://github.com/KaranTankshali/nestjs-temporal/stargazers">
+    <img src="https://img.shields.io/github/stars/KaranTankshali/nestjs-temporal?style=for-the-badge&logo=github&color=yellow" alt="GitHub Stars" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/KaranTankshali/nestjs-temporal/commits/main">
+    <img src="https://img.shields.io/github/last-commit/KaranTankshali/nestjs-temporal?style=for-the-badge&logo=git&color=blue" alt="Last Commit" />
+  </a>
+  <a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/TypeScript-5.4+-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  </a>
+  <a href="https://nodejs.org/">
+    <img src="https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js" />
+  </a>
+  <a href="https://nestjs.com/">
+    <img src="https://img.shields.io/badge/NestJS-10_|_11-E0234E?style=for-the-badge&logo=nestjs&logoColor=white" alt="NestJS" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://bundlephobia.com/package/nest-temporal">
+    <img src="https://img.shields.io/bundlephobia/minzip/nest-temporal?style=for-the-badge&color=success" alt="Bundle Size" />
+  </a>
+  <a href="https://temporal.io/">
+    <img src="https://img.shields.io/badge/Temporal-1.9+-000000?style=for-the-badge&logo=temporal&logoColor=white" alt="Temporal" />
+  </a>
+  <a href="https://github.com/KaranTankshali/nestjs-temporal/issues">
+    <img src="https://img.shields.io/github/issues/KaranTankshali/nestjs-temporal?style=for-the-badge&color=orange" alt="Issues" />
+  </a>
+  <a href="https://github.com/KaranTankshali/nestjs-temporal/pulls">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=for-the-badge" alt="PRs Welcome" />
+  </a>
+</p>
+
 ---
 
 ## Why this package?

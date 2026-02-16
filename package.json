@@ -6,6 +6,14 @@
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KaranTankshali/nestjs-temporal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/KaranTankshali/nestjs-temporal/issues"
+  },
+  "homepage": "https://github.com/KaranTankshali/nestjs-temporal#readme",
   "files": [
     "dist",
     "llms.txt",
