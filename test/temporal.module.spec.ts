@@ -7,6 +7,7 @@ import { TEMPORAL_MODULE_OPTIONS } from '../src/constants';
 import { TemporalClientService } from '../src/services/temporal-client.service';
 import { TemporalWorkerService } from '../src/services/temporal-worker.service';
 import { TemporalDiscoveryService } from '../src/services/temporal-discovery.service';
+import { getWorkflowClientToken } from '../src/decorators/inject-workflow-client.decorator';
 
 interface ValueProvider {
   provide: symbol | string;
@@ -170,6 +171,55 @@ describe('TemporalModule', () => {
       expect(result.exports).toContain(TemporalClientService);
       expect(result.exports).toContain(TemporalWorkerService);
       expect(result.exports).not.toContain(TEMPORAL_MODULE_OPTIONS);
+    });
+  });
+
+  describe('registerClient', () => {
+    it('should return a DynamicModule (string form)', () => {
+      const result = TemporalModule.registerClient('orders');
+
+      expect(result.module).toBe(TemporalModule);
+    });
+
+    it('should return a DynamicModule (object form)', () => {
+      const result = TemporalModule.registerClient({ taskQueue: 'orders' });
+
+      expect(result.module).toBe(TemporalModule);
+    });
+
+    it('should provide a factory for the correct token', () => {
+      const result = TemporalModule.registerClient('orders');
+      const token = getWorkflowClientToken('orders');
+
+      const provider = findProvider(result, token) as FactoryProvider;
+
+      expect(provider).toBeDefined();
+      expect(provider.provide).toBe(token);
+      expect(provider.inject).toEqual([TemporalClientService]);
+      expect(typeof provider.useFactory).toBe('function');
+    });
+
+    it('should export the token', () => {
+      const result = TemporalModule.registerClient('orders');
+      const token = getWorkflowClientToken('orders');
+
+      expect(result.exports).toContain(token);
+    });
+
+    it('should produce different tokens for different task queues', () => {
+      const r1 = TemporalModule.registerClient('orders');
+      const r2 = TemporalModule.registerClient('notifications');
+
+      const p1 = findProvider(
+        r1,
+        getWorkflowClientToken('orders'),
+      ) as FactoryProvider;
+      const p2 = findProvider(
+        r2,
+        getWorkflowClientToken('notifications'),
+      ) as FactoryProvider;
+
+      expect(p1.provide).not.toBe(p2.provide);
     });
   });
 });

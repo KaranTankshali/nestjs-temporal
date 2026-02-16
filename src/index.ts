@@ -4,6 +4,10 @@ export { TemporalModule } from './temporal.module';
 // ── Decorators ──
 export { Worker } from './decorators/temporal-worker.decorator';
 export { Activity } from './decorators/activity.decorator';
+export {
+  InjectWorkflowClient,
+  getWorkflowClientToken,
+} from './decorators/inject-workflow-client.decorator';
 
 // ── Services ──
 export { TemporalClientService } from './services/temporal-client.service';
@@ -12,6 +16,10 @@ export {
   WorkerRegistrationConfig,
 } from './services/temporal-worker.service';
 export { TemporalDiscoveryService } from './services/temporal-discovery.service';
+export {
+  WorkflowClient,
+  WorkflowStartOptions,
+} from './services/workflow-client';
 
 // ── Interfaces ──
 export {

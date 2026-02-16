@@ -15,6 +15,7 @@
 <p align="center">
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick Start</a> •
+  <a href="#starting-workflows">Starting Workflows</a> •
   <a href="#api-reference">API Reference</a> •
   <a href="#configuration">Configuration</a> •
   <a href="#testing">Testing</a> •
@@ -32,7 +33,7 @@ Temporal.io is an incredible platform for orchestrating long-running, fault-tole
 | **Worker registration** | Manual `Worker.create()` calls in `onModuleInit`, repeated per task queue | Automatic — decorate your class with `@Worker()` |
 | **Activity binding** | Hand-build an `activities` map, manually `.bind()` each method | Automatic — decorate methods with `@Activity()` |
 | **Dependency injection** | Activities lose access to NestJS DI (`this.myService` is `undefined`) | Preserved — activities are bound to their class instance |
-| **Client setup** | Duplicate `Connection.connect()` boilerplate in every project | `TemporalClientService` injected anywhere via standard NestJS DI |
+| **Client setup** | Duplicate `Connection.connect()` boilerplate in every project | `TemporalClientService` or `@InjectWorkflowClient()` — your choice |
 | **Multi-queue support** | Custom plumbing to run workers for different task queues | Built-in — multiple `@Worker()` classes with different queues |
 | **Configuration** | Scattered `process.env` reads | Centralized `forRoot()` / `forRootAsync()` with async factory support |
 
@@ -42,7 +43,7 @@ The result is **less boilerplate, better DI integration, and a familiar decorato
 
 - **NestJS teams adopting Temporal** who want an idiomatic integration instead of manual setup.
 - **Teams running multiple task queues** (e.g., onboarding, billing, notifications) that need clean worker separation.
-- **Developers coming from `@nestjs/bullmq`** who want the same `@Processor` / `@Process` ergonomics for Temporal.
+- **Developers coming from `@nestjs/bullmq`** who want the same `@Processor` / `@Process` / `@InjectQueue` ergonomics for Temporal.
 - **Platform teams** building internal workflow orchestration and want a reusable module across services.
 
 ## Installation
@@ -86,7 +87,7 @@ export class AppModule {}
 ```typescript
 // activities/order.activities.ts
 import { Injectable } from '@nestjs/common';
-import { TemporalWorker, Activity } from 'nest-temporal';
+import { Worker, Activity } from 'nest-temporal';
 
 import { PaymentService } from '../services/payment.service';
 import { EmailService } from '../services/email.service';
@@ -146,7 +147,7 @@ export async function OrderWorkflow(orderId: string, email: string, amount: numb
 
 > **Why aren't workflows decorated?** Temporal runs workflows inside a deterministic V8 sandbox — they can't access NestJS DI, Node.js APIs, or external modules. They must be loaded from a file path. The `workflowsPath` in `@Worker()` handles this.
 
-### 4. Start workflows from anywhere
+### 4. Start workflows from your service
 
 ```typescript
 // services/order.service.ts
@@ -207,6 +208,124 @@ That's it. When the app starts, `nest-temporal` will:
 🔧 Namespace: default
 ⚡ Activities: chargePayment, sendConfirmationEmail, refundPayment
 ```
+
+---
+
+## Starting Workflows
+
+`nest-temporal` offers **two approaches** for starting workflows. Choose whichever fits your project best — they both use the same underlying connection and can coexist.
+
+### Approach A: Global `TemporalClientService`
+
+Inject the global service and pass the task queue on every call. Simple and flexible.
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { TemporalClientService } from 'nest-temporal';
+
+@Injectable()
+export class OrderService {
+  constructor(private readonly temporal: TemporalClientService) {}
+
+  async placeOrder(orderId: string, items: Item[]) {
+    return this.temporal.startWorkflow(
+      'OrderWorkflow',
+      `order-${orderId}`,
+      [{ orderId, items }],
+      'order-processing',       // ← task queue passed every time
+    );
+  }
+
+  async shipOrder(orderId: string) {
+    return this.temporal.startWorkflow(
+      'ShipWorkflow',
+      `ship-${orderId}`,
+      [{ orderId }],
+      'shipping',               // ← different queue, same service
+    );
+  }
+}
+```
+
+**No extra module configuration needed** — `TemporalClientService` is always available after `forRoot()`.
+
+### Approach B: Scoped `@InjectWorkflowClient()` (BullMQ-style)
+
+Register a task-queue-scoped client and inject it. The queue name is declared once — never repeated.
+
+This is the direct equivalent of BullMQ's `@InjectQueue('audio')` pattern.
+
+**Step 1 — Register the client(s) in your module:**
+
+```typescript
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { TemporalModule } from 'nest-temporal';
+
+@Module({
+  imports: [
+    TemporalModule.forRoot({ address: 'localhost:7233' }),
+    TemporalModule.registerClient('order-processing'),    // ← like BullModule.registerQueue()
+    TemporalModule.registerClient('shipping'),
+  ],
+})
+export class AppModule {}
+```
+
+**Step 2 — Inject the scoped client:**
+
+```typescript
+// services/order.service.ts
+import { Injectable } from '@nestjs/common';
+import { InjectWorkflowClient, WorkflowClient } from 'nest-temporal';
+
+@Injectable()
+export class OrderService {
+  constructor(
+    @InjectWorkflowClient('order-processing')             // ← like @InjectQueue('audio')
+    private readonly orders: WorkflowClient,
+
+    @InjectWorkflowClient('shipping')
+    private readonly shipping: WorkflowClient,
+  ) {}
+
+  async placeOrder(orderId: string, items: Item[]) {
+    return this.orders.start('OrderWorkflow', {            // ← no task queue needed
+      workflowId: `order-${orderId}`,
+      args: [{ orderId, items }],
+    });
+  }
+
+  async shipOrder(orderId: string) {
+    return this.shipping.start('ShipWorkflow', {
+      workflowId: `ship-${orderId}`,
+      args: [{ orderId }],
+    });
+  }
+
+  async cancelOrder(orderId: string) {
+    return this.orders.cancel(`order-${orderId}`);
+  }
+
+  async getOrderStatus(orderId: string) {
+    return this.orders.describe(`order-${orderId}`);
+  }
+}
+```
+
+### Which approach should I use?
+
+| Scenario | Recommended |
+|---|---|
+| Single task queue, simple app / prototype | **Approach A** — less ceremony |
+| Multiple task queues, team project | **Approach B** — safety + clarity |
+| Dynamic queue names determined at runtime | **Approach A** — queue is a parameter |
+| Feature-module isolation (each module owns its queue) | **Approach B** — explicit dependency declaration |
+| Migrating from `@nestjs/bullmq` | **Approach B** — 1:1 mental model |
+
+> Both approaches share the same underlying `TemporalClientService` connection. There's no performance overhead in using both side by side.
+
+---
 
 ## Configuration
 
@@ -272,7 +391,7 @@ TemporalModule.forRoot({
 })
 ```
 
-`TemporalClientService` is still available for injection; the `@Worker()` discovery step is simply skipped.
+`TemporalClientService` (and any `@InjectWorkflowClient()` clients) are still available for injection; the `@Worker()` discovery step is simply skipped.
 
 ### `TemporalModuleOptions` reference
 
@@ -285,6 +404,30 @@ TemporalModule.forRoot({
 | `workerDefaults` | `object` | — | Default limits for all workers |
 
 ## API Reference
+
+### Module Methods
+
+#### `TemporalModule.forRoot(options?)`
+
+Register the module with static options. Provides `TemporalClientService` globally.
+
+#### `TemporalModule.forRootAsync(options)`
+
+Register with an async factory — use when you need to inject `ConfigService` etc.
+
+#### `TemporalModule.registerClient(taskQueue)`
+
+Register a task-queue-scoped `WorkflowClient` provider. This is the equivalent of `BullModule.registerQueue()`.
+
+```typescript
+// String form
+TemporalModule.registerClient('orders')
+
+// Object form
+TemporalModule.registerClient({ taskQueue: 'orders' })
+```
+
+Can be called multiple times for different task queues. The registered client is injectable via `@InjectWorkflowClient('orders')`.
 
 ### Decorators
 
@@ -326,11 +469,25 @@ async myMethod() { ... }
 |---|---|---|---|
 | `name` | `string` | method name | Override the activity name |
 
+#### `@InjectWorkflowClient(taskQueue: string)`
+
+Parameter/property decorator. Injects a task-queue-scoped `WorkflowClient`.
+
+Equivalent to BullMQ's `@InjectQueue()`.
+
+```typescript
+constructor(
+  @InjectWorkflowClient('orders') private readonly orders: WorkflowClient,
+) {}
+```
+
+> **Prerequisite:** The task queue must be registered via `TemporalModule.registerClient('orders')`.
+
 ### Services
 
 #### `TemporalClientService`
 
-Injectable service for interacting with the Temporal server.
+Global injectable service for interacting with the Temporal server. Use this when you want full flexibility and don't mind passing the task queue on each call.
 
 | Method | Returns | Description |
 |---|---|---|
@@ -344,6 +501,25 @@ Injectable service for interacting with the Temporal server.
 | `getWorkflowResult(workflowId)` | `T` | Wait for completion and return result |
 | `getWorkflowStatus(workflowId)` | `{ status, runId }` | Get workflow status and run ID |
 
+#### `WorkflowClient`
+
+Task-queue-scoped client injected via `@InjectWorkflowClient()`. Pre-bound to a specific task queue — you never pass the queue name.
+
+Equivalent to the `Queue` object from `@InjectQueue()` in BullMQ.
+
+| Method | Returns | Description |
+|---|---|---|
+| `taskQueue` | `string` | The bound task queue name (readonly property) |
+| `start(type, { workflowId, args? })` | `WorkflowHandle` | Start a new workflow |
+| `execute(type, { workflowId, args? })` | `T` | Start + wait for result |
+| `getHandle(workflowId)` | `WorkflowHandle` | Get handle to an existing workflow |
+| `query(workflowId, queryType, ...args)` | `T` | Query a running workflow |
+| `signal(workflowId, signalName, ...args)` | `void` | Send a signal to a workflow |
+| `cancel(workflowId)` | `void` | Cancel a running workflow |
+| `terminate(workflowId, reason?)` | `void` | Forcefully terminate a workflow |
+| `result(workflowId)` | `T` | Wait for completion and return result |
+| `describe(workflowId)` | `{ status, runId }` | Get workflow status and run ID |
+
 #### `TemporalWorkerService`
 
 Injectable service for worker lifecycle management (usually managed automatically).
@@ -353,6 +529,19 @@ Injectable service for worker lifecycle management (usually managed automaticall
 | `getWorker(taskQueue)` | `Worker \| undefined` | Get a registered worker by queue name |
 | `getRegisteredTaskQueues()` | `string[]` | List all active task queue names |
 | `shutdownWorker(taskQueue)` | `void` | Shut down a specific worker |
+
+### Helper Functions
+
+#### `getWorkflowClientToken(taskQueue: string)`
+
+Returns the DI injection token for a given task queue. Useful for advanced scenarios like manual provider registration or testing.
+
+```typescript
+import { getWorkflowClientToken } from 'nest-temporal';
+
+const token = getWorkflowClientToken('orders');
+// → 'TEMPORAL_WORKFLOW_CLIENT:orders'
+```
 
 ### Multi-queue support
 
@@ -379,37 +568,44 @@ export class InvoiceActivities {
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────────┐
-│  AppModule                                             │
-│                                                        │
-│  TemporalModule.forRootAsync({                         │
-│    useFactory: (config) => ({ ... })                   │
-│  })                                                    │
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  TemporalDiscoveryService         (on init)      │  │
-│  │    ├─ Scans all providers for @Worker()  │  │
-│  │    ├─ Collects @Activity() methods               │  │
-│  │    └─ Registers workers via TemporalWorkerService│  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│  ┌─────────────────────┐  ┌──────────────────────────┐ │
-│  │ TemporalClientService│  │ TemporalWorkerService    │ │
-│  │  • startWorkflow()  │  │  • registerWorker()      │ │
-│  │  • signalWorkflow() │  │  • Worker per task queue  │ │
-│  │  • queryWorkflow()  │  │  • Auto-shutdown on exit │ │
-│  └─────────────────────┘  └──────────────────────────┘ │
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Your Feature Modules                            │  │
-│  │                                                  │  │
-│  │  @Worker({ taskQueue: 'onboarding' })    │  │
-│  │  class OnboardingActivities {                    │  │
-│  │    @Activity() addUser() { ... }                 │  │
-│  │    @Activity() sendEmail() { ... }               │  │
-│  │  }                                               │  │
-│  └──────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  AppModule                                                   │
+│                                                              │
+│  TemporalModule.forRoot({ ... })                             │
+│  TemporalModule.registerClient('orders')                     │
+│  TemporalModule.registerClient('notifications')              │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  TemporalDiscoveryService              (on init)       │  │
+│  │    ├─ Scans all providers for @Worker()                │  │
+│  │    ├─ Collects @Activity() methods                     │  │
+│  │    └─ Registers workers via TemporalWorkerService      │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌─────────────────────┐  ┌────────────────────────────────┐ │
+│  │ TemporalClientService│  │ TemporalWorkerService          │ │
+│  │  • startWorkflow()  │  │  • registerWorker()            │ │
+│  │  • signalWorkflow() │  │  • Worker per task queue       │ │
+│  │  • queryWorkflow()  │  │  • Auto-shutdown on exit       │ │
+│  └────────┬────────────┘  └────────────────────────────────┘ │
+│           │                                                  │
+│  ┌────────▼────────────────────────────────────────────────┐ │
+│  │  WorkflowClient (scoped)        one per registerClient  │ │
+│  │  • @InjectWorkflowClient('orders')   → orders client   │ │
+│  │  • @InjectWorkflowClient('notifs')   → notifs client   │ │
+│  │  • Pre-bound to task queue, delegates to ClientService  │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │  Your Feature Modules                                   │ │
+│  │                                                         │ │
+│  │  @Worker({ taskQueue: 'onboarding' })                   │ │
+│  │  class OnboardingActivities {                           │ │
+│  │    @Activity() addUser() { ... }                        │ │
+│  │    @Activity() sendEmail() { ... }                      │ │
+│  │  }                                                      │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Testing
@@ -421,11 +617,13 @@ npx jest --config jest.config.js
 ```
 
 ```
-Test Suites: 5 passed, 5 total
-Tests:       69 passed, 69 total
+Test Suites: 7 passed, 7 total
+Tests:       96 passed, 96 total
 ```
 
-When writing tests for *your own* activities, you can mock the Temporal services:
+### Mocking the global `TemporalClientService`
+
+When testing services that inject `TemporalClientService` directly:
 
 ```typescript
 import { Test } from '@nestjs/testing';
@@ -445,17 +643,44 @@ const module = await Test.createTestingModule({
 }).compile();
 ```
 
+### Mocking a scoped `WorkflowClient`
+
+When testing services that use `@InjectWorkflowClient()`:
+
+```typescript
+import { Test } from '@nestjs/testing';
+import { getWorkflowClientToken, WorkflowClient } from 'nest-temporal';
+
+const module = await Test.createTestingModule({
+  providers: [
+    OrderService,
+    {
+      provide: getWorkflowClientToken('orders'),
+      useValue: {
+        start: jest.fn().mockResolvedValue({ workflowId: 'order-1' }),
+        cancel: jest.fn().mockResolvedValue(undefined),
+        describe: jest.fn().mockResolvedValue({ status: 'RUNNING', runId: 'run-1' }),
+      } as Partial<WorkflowClient>,
+    },
+  ],
+}).compile();
+```
+
+> **Tip:** With `@InjectWorkflowClient`, you only mock the methods your service actually calls — and you never need to assert the `taskQueue` argument since it's pre-bound.
+
 ## Comparison with `@nestjs/bullmq`
 
 If you've used `@nestjs/bullmq`, the concepts map directly:
 
-| `@nestjs/bullmq` | `nest-temporalio` | Purpose |
+| `@nestjs/bullmq` | `nest-temporal` | Purpose |
 |---|---|---|
 | `BullModule.forRoot()` | `TemporalModule.forRoot()` | Module registration |
+| `BullModule.registerQueue({ name })` | `TemporalModule.registerClient(taskQueue)` | Register a queue-scoped provider |
+| `@InjectQueue('audio')` | `@InjectWorkflowClient('orders')` | Inject queue-scoped client |
+| `queue.add('jobName', data)` | `client.start('WorkflowName', { workflowId, args })` | Dispatch work |
 | `@Processor('queue')` | `@Worker({ taskQueue })` | Class-level queue binding |
 | `@Process('job')` | `@Activity()` | Method-level handler |
 | `WorkerHost` | — (not needed) | Base class for workers |
-| `InjectQueue()` | Inject `TemporalClientService` | Starting jobs/workflows |
 
 ## Compatibility
 
@@ -495,19 +720,23 @@ src/
 ├── constants.ts                        # Injection tokens & metadata keys
 ├── decorators/
 │   ├── temporal-worker.decorator.ts    # @Worker() class decorator
-│   └── activity.decorator.ts           # @Activity() method decorator
+│   ├── activity.decorator.ts           # @Activity() method decorator
+│   └── inject-workflow-client.decorator.ts  # @InjectWorkflowClient() + token helper
 ├── interfaces/
 │   ├── temporal-module-options.interface.ts
 │   ├── temporal-worker-options.interface.ts
 │   └── activity-options.interface.ts
 ├── services/
-│   ├── temporal-client.service.ts      # Client for starting/querying workflows
+│   ├── temporal-client.service.ts      # Global client for starting/querying workflows
 │   ├── temporal-worker.service.ts      # Worker lifecycle management
-│   └── temporal-discovery.service.ts   # Auto-discovers @Worker() providers
-├── temporal.module.ts                  # Dynamic NestJS module
+│   ├── temporal-discovery.service.ts   # Auto-discovers @Worker() providers
+│   └── workflow-client.ts             # Task-queue-scoped client (BullMQ-style)
+├── temporal.module.ts                  # Dynamic NestJS module (forRoot, forRootAsync, registerClient)
 └── index.ts                            # Public API exports
 test/
 ├── decorators.spec.ts
+├── inject-workflow-client.spec.ts
+├── workflow-client.spec.ts
 ├── temporal-client.service.spec.ts
 ├── temporal-worker.service.spec.ts
 ├── temporal-discovery.service.spec.ts
