@@ -4,7 +4,7 @@
   <img src="https://temporal.io/favicon.svg" width="60" alt="Temporal Logo" />
 </p>
 
-<h1 align="center">nestjs-temporal</h1>
+<h1 align="center">nest-temporal</h1>
 
 <p align="center">
   A first-class <a href="https://nestjs.com/">NestJS</a> integration for <a href="https://temporal.io/">Temporal.io</a> —
@@ -27,7 +27,7 @@
 
 Temporal.io is an incredible platform for orchestrating long-running, fault-tolerant workflows. But integrating it into a NestJS application today means a lot of manual wiring:
 
-| Problem | Without `nestjs-temporal` | With `nestjs-temporal` |
+| Problem | Without `nest-temporal` | With `nest-temporal` |
 |---|---|---|
 | **Worker registration** | Manual `Worker.create()` calls in `onModuleInit`, repeated per task queue | Automatic — decorate your class with `@Worker()` |
 | **Activity binding** | Hand-build an `activities` map, manually `.bind()` each method | Automatic — decorate methods with `@Activity()` |
@@ -49,13 +49,13 @@ The result is **less boilerplate, better DI integration, and a familiar decorato
 
 ```bash
 # npm
-npm install nestjs-temporal @temporalio/client @temporalio/worker
+npm install nest-temporal @temporalio/client @temporalio/worker
 
 # pnpm
-pnpm add nestjs-temporal @temporalio/client @temporalio/worker
+pnpm add nest-temporal @temporalio/client @temporalio/worker
 
 # yarn
-yarn add nestjs-temporal @temporalio/client @temporalio/worker
+yarn add nest-temporal @temporalio/client @temporalio/worker
 ```
 
 > **Peer dependencies:** This package requires `@nestjs/common ^10 || ^11`, `@nestjs/core ^10 || ^11`, `@temporalio/client ^1.9+`, and `@temporalio/worker ^1.9+` (optional — only needed if running workers).
@@ -67,7 +67,7 @@ yarn add nestjs-temporal @temporalio/client @temporalio/worker
 ```typescript
 // app.module.ts
 import { Module } from '@nestjs/common';
-import { TemporalModule } from 'nestjs-temporal';
+import { TemporalModule } from 'nest-temporal';
 
 @Module({
   imports: [
@@ -86,7 +86,7 @@ export class AppModule {}
 ```typescript
 // activities/order.activities.ts
 import { Injectable } from '@nestjs/common';
-import { TemporalWorker, Activity } from 'nestjs-temporal';
+import { TemporalWorker, Activity } from 'nest-temporal';
 
 import { PaymentService } from '../services/payment.service';
 import { EmailService } from '../services/email.service';
@@ -151,7 +151,7 @@ export async function OrderWorkflow(orderId: string, email: string, amount: numb
 ```typescript
 // services/order.service.ts
 import { Injectable } from '@nestjs/common';
-import { TemporalClientService } from 'nestjs-temporalio';
+import { TemporalClientService } from 'nest-temporal';
 
 @Injectable()
 export class OrderService {
@@ -191,7 +191,7 @@ import { OrderController } from './order.controller';
 export class OrderModule {}
 ```
 
-That's it. When the app starts, `nestjs-temporalio` will:
+That's it. When the app starts, `nest-temporal` will:
 
 1. Scan all providers for `@Worker()` classes
 2. Collect their `@Activity()` methods (bound to the class instance for DI)
@@ -417,7 +417,6 @@ export class InvoiceActivities {
 The package includes a full test suite. To run:
 
 ```bash
-cd lib/nestjs-temporalio
 npx jest --config jest.config.js
 ```
 
@@ -430,7 +429,7 @@ When writing tests for *your own* activities, you can mock the Temporal services
 
 ```typescript
 import { Test } from '@nestjs/testing';
-import { TemporalClientService } from 'nestjs-temporalio';
+import { TemporalClientService } from 'nest-temporal';
 
 const module = await Test.createTestingModule({
   providers: [
@@ -450,7 +449,7 @@ const module = await Test.createTestingModule({
 
 If you've used `@nestjs/bullmq`, the concepts map directly:
 
-| `@nestjs/bullmq` | `nestjs-temporalio` | Purpose |
+| `@nestjs/bullmq` | `nest-temporalio` | Purpose |
 |---|---|---|
 | `BullModule.forRoot()` | `TemporalModule.forRoot()` | Module registration |
 | `@Processor('queue')` | `@Worker({ taskQueue })` | Class-level queue binding |
@@ -476,8 +475,8 @@ Contributions are welcome! Here's how to get started:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/nestjs-temporalio.git
-cd nestjs-temporalio
+git clone https://github.com/your-org/nest-temporal.git
+cd nest-temporal
 
 # 2. Install dependencies
 npm install
