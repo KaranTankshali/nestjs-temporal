@@ -4,7 +4,7 @@
   <img src="https://temporal.io/favicon.svg" width="60" alt="Temporal Logo" />
 </p>
 
-<h1 align="center">nestjs-temporalio</h1>
+<h1 align="center">nestjs-temporal</h1>
 
 <p align="center">
   A first-class <a href="https://nestjs.com/">NestJS</a> integration for <a href="https://temporal.io/">Temporal.io</a> —
@@ -27,7 +27,7 @@
 
 Temporal.io is an incredible platform for orchestrating long-running, fault-tolerant workflows. But integrating it into a NestJS application today means a lot of manual wiring:
 
-| Problem | Without `nestjs-temporalio` | With `nestjs-temporalio` |
+| Problem | Without `nestjs-temporal` | With `nestjs-temporal` |
 |---|---|---|
 | **Worker registration** | Manual `Worker.create()` calls in `onModuleInit`, repeated per task queue | Automatic — decorate your class with `@Worker()` |
 | **Activity binding** | Hand-build an `activities` map, manually `.bind()` each method | Automatic — decorate methods with `@Activity()` |
@@ -49,13 +49,13 @@ The result is **less boilerplate, better DI integration, and a familiar decorato
 
 ```bash
 # npm
-npm install nestjs-temporalio @temporalio/client @temporalio/worker
+npm install nestjs-temporal @temporalio/client @temporalio/worker
 
 # pnpm
-pnpm add nestjs-temporalio @temporalio/client @temporalio/worker
+pnpm add nestjs-temporal @temporalio/client @temporalio/worker
 
 # yarn
-yarn add nestjs-temporalio @temporalio/client @temporalio/worker
+yarn add nestjs-temporal @temporalio/client @temporalio/worker
 ```
 
 > **Peer dependencies:** This package requires `@nestjs/common ^10 || ^11`, `@nestjs/core ^10 || ^11`, `@temporalio/client ^1.9+`, and `@temporalio/worker ^1.9+` (optional — only needed if running workers).
@@ -67,7 +67,7 @@ yarn add nestjs-temporalio @temporalio/client @temporalio/worker
 ```typescript
 // app.module.ts
 import { Module } from '@nestjs/common';
-import { TemporalModule } from 'nestjs-temporalio';
+import { TemporalModule } from 'nestjs-temporal';
 
 @Module({
   imports: [
@@ -86,7 +86,7 @@ export class AppModule {}
 ```typescript
 // activities/order.activities.ts
 import { Injectable } from '@nestjs/common';
-import { TemporalWorker, Activity } from 'nestjs-temporalio';
+import { TemporalWorker, Activity } from 'nestjs-temporal';
 
 import { PaymentService } from '../services/payment.service';
 import { EmailService } from '../services/email.service';
