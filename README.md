@@ -700,7 +700,7 @@ Contributions are welcome! Here's how to get started:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/nest-temporal.git
+git clone git@github.com:KaranTankshali/nestjs-temporal.git
 cd nest-temporal
 
 # 2. Install dependencies
