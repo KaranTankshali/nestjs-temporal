@@ -1,6 +1,6 @@
 {
   "name": "nest-temporal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "NestJS integration for Temporal.io — decorator-based activity registration, auto-discovery workers, and dynamic module configuration inspired by @nestjs/bullmq",
   "author": "CenterSeat",
   "license": "MIT",
