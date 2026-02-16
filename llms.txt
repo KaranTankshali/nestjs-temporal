@@ -1,0 +1,107 @@
+# nest-temporal
+
+> NestJS integration for Temporal.io — decorator-based activity registration, automatic worker discovery, and a clean client API. Inspired by @nestjs/bullmq.
+
+## What it does
+
+nest-temporal wraps the Temporal.io TypeScript SDK into an idiomatic NestJS module with:
+- `TemporalModule.forRoot()` / `forRootAsync()` — centralized configuration
+- `@Worker()` class decorator — marks a provider as a Temporal activity host (like `@Processor` in BullMQ)
+- `@Activity()` method decorator — registers methods as Temporal activities (like `@Process` in BullMQ)
+- `TemporalClientService` — global injectable for starting/querying/signaling workflows
+- `@InjectWorkflowClient(taskQueue)` — task-queue-scoped client injection (like `@InjectQueue` in BullMQ)
+- `WorkflowClient` — pre-bound client class returned by `@InjectWorkflowClient()`
+- Auto-discovery at startup — scans all NestJS providers, binds activities with DI context preserved
+
+## Install
+
+```bash
+npm install nest-temporal @temporalio/client @temporalio/worker
+```
+
+Peer deps: @nestjs/common ^10||^11, @nestjs/core ^10||^11, @temporalio/client ^1.9+, @temporalio/worker ^1.9+ (optional)
+
+## Public API (all from 'nest-temporal')
+
+### Module
+- `TemporalModule.forRoot(options?: TemporalModuleOptions): DynamicModule`
+- `TemporalModule.forRootAsync(options: TemporalModuleAsyncOptions): DynamicModule`
+- `TemporalModule.registerClient(taskQueue: string | { taskQueue: string }): DynamicModule`
+
+### Decorators
+- `@Worker(options: TemporalWorkerOptions)` — class decorator
+- `@Activity(options?: ActivityOptions)` — method decorator
+- `@InjectWorkflowClient(taskQueue: string)` — parameter/property decorator
+
+### Services
+- `TemporalClientService` — global client (inject directly)
+- `WorkflowClient` — task-queue-scoped client (inject via @InjectWorkflowClient)
+
+### Helpers
+- `getWorkflowClientToken(taskQueue: string): string` — returns DI token for testing/manual providers
+
+### Interfaces
+- `TemporalModuleOptions` — { address?, namespace?, enableWorker?, tls?, workerDefaults? }
+- `TemporalModuleAsyncOptions` — { imports?, useFactory, inject? }
+- `TemporalWorkerOptions` — { taskQueue, workflowsPath, maxCachedWorkflows?, ... }
+- `ActivityOptions` — { name? }
+- `WorkflowStartOptions` — { workflowId, args? }
+
+## Two ways to start workflows
+
+### Approach A: Global TemporalClientService
+```typescript
+constructor(private readonly temporal: TemporalClientService) {}
+await this.temporal.startWorkflow('OrderWorkflow', `order-${id}`, [args], 'my-queue');
+```
+
+### Approach B: Scoped @InjectWorkflowClient (BullMQ-style)
+```typescript
+// Module: TemporalModule.registerClient('my-queue')
+constructor(@InjectWorkflowClient('my-queue') private readonly client: WorkflowClient) {}
+await this.client.start('OrderWorkflow', { workflowId: `order-${id}`, args: [args] });
+```
+
+## Defining activities
+
+```typescript
+@Worker({ taskQueue: 'orders', workflowsPath: require.resolve('./order.workflow') })
+@Injectable()
+export class OrderActivities {
+  constructor(private readonly payments: PaymentService) {} // DI works
+
+  @Activity()
+  async chargePayment(orderId: string, amount: number) {
+    return this.payments.charge(orderId, amount);
+  }
+
+  @Activity({ name: 'refund' })
+  async handleRefund(orderId: string) { ... }
+}
+```
+
+## Workflows (standard Temporal, no decorators)
+
+```typescript
+import { proxyActivities } from '@temporalio/workflow';
+const { chargePayment } = proxyActivities({ startToCloseTimeout: '30s' });
+export async function OrderWorkflow(orderId: string, amount: number) {
+  await chargePayment(orderId, amount);
+}
+```
+
+## BullMQ mapping
+
+| @nestjs/bullmq | nest-temporal |
+|---|---|
+| BullModule.forRoot() | TemporalModule.forRoot() |
+| BullModule.registerQueue({ name }) | TemporalModule.registerClient(taskQueue) |
+| @InjectQueue('name') | @InjectWorkflowClient('taskQueue') |
+| queue.add('job', data) | client.start('Workflow', { workflowId, args }) |
+| @Processor('queue') | @Worker({ taskQueue }) |
+| @Process('job') | @Activity() |
+
+## Detailed docs
+
+- [Full README](https://github.com/your-org/nest-temporal/blob/main/README.md)
+- [Full API reference for LLMs](https://github.com/your-org/nest-temporal/blob/main/llms-full.txt)

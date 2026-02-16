@@ -1,0 +1,44 @@
+# Cursor Rules for nest-temporal
+
+## What this project is
+
+nest-temporal is a NestJS dynamic module wrapping Temporal.io. It provides decorator-based activity registration (@Worker, @Activity), automatic worker discovery, a global TemporalClientService, and a scoped @InjectWorkflowClient() decorator (like BullMQ's @InjectQueue).
+
+## Code style
+
+- TypeScript strict mode with experimentalDecorators
+- All public exports go through src/index.ts — users import from 'nest-temporal' only
+- Decorators use SetMetadata from @nestjs/common
+- Services use standard NestJS patterns: @Injectable(), OnModuleInit, OnApplicationShutdown
+- JSDoc required on all exported symbols
+- Log messages use emoji prefixes (✅ ❌ 🚀 📦 🔍)
+- Errors during connection/startup are logged, NOT thrown (graceful degradation)
+
+## Key files
+
+- src/temporal.module.ts — DynamicModule with forRoot(), forRootAsync(), registerClient()
+- src/services/temporal-client.service.ts — global Temporal client
+- src/services/workflow-client.ts — task-queue-scoped client (BullMQ Queue equivalent)
+- src/services/temporal-discovery.service.ts — auto-discovers @Worker/@Activity at startup
+- src/services/temporal-worker.service.ts — manages Temporal Worker lifecycle
+- src/decorators/ — @Worker(), @Activity(), @InjectWorkflowClient()
+- src/constants.ts — injection tokens and metadata keys
+
+## When editing this codebase
+
+- Run `npm test` after any change — all tests must pass
+- Run `npx tsc -p tsconfig.build.json --noEmit` for type-checking
+- Tests are in test/ directory, use Jest + @nestjs/testing
+- Temporal SDK is mocked in tests — no real server needed
+- If adding a new export, add it to src/index.ts AND update llms.txt / llms-full.txt
+
+## When generating code that USES nest-temporal
+
+- All imports come from 'nest-temporal' (never subpaths)
+- Two ways to start workflows:
+  - Global: inject TemporalClientService, call startWorkflow(type, id, args, taskQueue)
+  - Scoped: TemporalModule.registerClient('queue'), then @InjectWorkflowClient('queue') → WorkflowClient
+- @Worker() classes MUST also have @Injectable() and be registered as providers
+- Workflows are plain Temporal files using proxyActivities() — they do NOT use NestJS DI
+- workflowsPath should use require.resolve() at the decorator site
+- For tests, mock WorkflowClient with getWorkflowClientToken('queue') as the provide token

@@ -1,0 +1,572 @@
+# nest-temporal — Complete API Reference for LLMs
+
+> Use this file when generating code that imports from `nest-temporal`.
+> All public exports come from the single entry point: `import { ... } from 'nest-temporal';`
+
+---
+
+## 1. Module Registration
+
+### TemporalModule.forRoot(options?)
+
+Register the module with static config. Call once in your root AppModule.
+
+```typescript
+import { Module } from '@nestjs/common';
+import { TemporalModule } from 'nest-temporal';
+
+@Module({
+  imports: [
+    TemporalModule.forRoot({
+      address: 'localhost:7233',    // default: 'localhost:7233'
+      namespace: 'default',         // default: 'default'
+      enableWorker: true,           // default: true — set false for client-only mode
+      workerDefaults: {
+        maxCachedWorkflows: 100,
+        maxConcurrentActivityTaskExecutions: 10,
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### TemporalModule.forRootAsync(options)
+
+Register with async factory (for ConfigService injection):
+
+```typescript
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TemporalModule } from 'nest-temporal';
+
+TemporalModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) => ({
+    address: config.get('TEMPORAL_ADDRESS', 'localhost:7233'),
+    namespace: config.get('TEMPORAL_NAMESPACE', 'default'),
+    enableWorker: config.get('ENABLE_WORKER') === 'true',
+  }),
+})
+```
+
+### TemporalModule.registerClient(taskQueue)
+
+Register a task-queue-scoped WorkflowClient. Like BullModule.registerQueue().
+
+```typescript
+// String form
+TemporalModule.registerClient('orders')
+
+// Object form
+TemporalModule.registerClient({ taskQueue: 'orders' })
+
+// Multiple queues
+@Module({
+  imports: [
+    TemporalModule.forRoot({ address: 'localhost:7233' }),
+    TemporalModule.registerClient('orders'),
+    TemporalModule.registerClient('notifications'),
+    TemporalModule.registerClient('billing'),
+  ],
+})
+export class AppModule {}
+```
+
+---
+
+## 2. Interfaces (Type Signatures)
+
+### TemporalModuleOptions
+
+```typescript
+interface TemporalModuleOptions {
+  address?: string;                  // default: 'localhost:7233'
+  namespace?: string;                // default: 'default'
+  enableWorker?: boolean;            // default: true
+  tls?: TemporalTlsOptions;
+  workerDefaults?: {
+    maxCachedWorkflows?: number;
+    maxConcurrentActivityTaskExecutions?: number;
+    maxConcurrentWorkflowTaskExecutions?: number;
+  };
+}
+```
+
+### TemporalModuleAsyncOptions
+
+```typescript
+interface TemporalModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
+  useFactory: (...args: unknown[]) => Promise<TemporalModuleOptions> | TemporalModuleOptions;
+  inject?: Array<Type<unknown> | string | symbol>;
+}
+```
+
+### TemporalTlsOptions
+
+```typescript
+interface TemporalTlsOptions {
+  clientCertPair?: { crt: Buffer; key: Buffer };
+  serverRootCACertificate?: Buffer;
+  serverNameOverride?: string;
+}
+```
+
+### TemporalWorkerOptions
+
+```typescript
+interface TemporalWorkerOptions {
+  taskQueue: string;                             // required
+  workflowsPath: string;                         // required — use require.resolve()
+  maxCachedWorkflows?: number;
+  maxConcurrentActivityTaskExecutions?: number;
+  maxConcurrentWorkflowTaskExecutions?: number;
+}
+```
+
+### ActivityOptions
+
+```typescript
+interface ActivityOptions {
+  name?: string;    // override activity name; defaults to method name
+}
+```
+
+### WorkflowStartOptions
+
+```typescript
+interface WorkflowStartOptions {
+  workflowId: string;    // unique workflow ID
+  args?: unknown[];      // arguments to workflow function; default: []
+}
+```
+
+---
+
+## 3. Decorators
+
+### @Worker(options: TemporalWorkerOptions) — class decorator
+
+Marks a class as a Temporal activity host. Its @Activity() methods are auto-discovered.
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { Worker, Activity } from 'nest-temporal';
+
+@Worker({
+  taskQueue: 'order-processing',
+  workflowsPath: require.resolve('./workflows/order.workflow'),
+})
+@Injectable()
+export class OrderActivities {
+  constructor(private readonly payments: PaymentService) {} // DI works
+
+  @Activity()
+  async chargePayment(orderId: string, amount: number) {
+    return this.payments.charge(orderId, amount);
+  }
+
+  @Activity({ name: 'refundPayment' })
+  async handleRefund(orderId: string) {
+    return this.payments.refund(orderId);
+  }
+
+  // NOT registered — no @Activity() decorator
+  private formatReceipt(orderId: string) { ... }
+}
+```
+
+IMPORTANT: The @Worker() class must also be decorated with @Injectable() and registered as a NestJS provider.
+
+### @Activity(options?: ActivityOptions) — method decorator
+
+Marks a method as a Temporal activity. Only works on methods inside a @Worker() class.
+
+```typescript
+@Activity()                           // registered as 'myMethod'
+async myMethod() { ... }
+
+@Activity({ name: 'customName' })     // registered as 'customName'
+async myMethod() { ... }
+```
+
+### @InjectWorkflowClient(taskQueue: string) — parameter/property decorator
+
+Injects a task-queue-scoped WorkflowClient. Equivalent to @InjectQueue() from BullMQ.
+
+PREREQUISITE: TemporalModule.registerClient(taskQueue) must be called in the module imports.
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { InjectWorkflowClient, WorkflowClient } from 'nest-temporal';
+
+@Injectable()
+export class OrderService {
+  constructor(
+    @InjectWorkflowClient('orders') private readonly orders: WorkflowClient,
+  ) {}
+}
+```
+
+---
+
+## 4. Services
+
+### TemporalClientService — global client
+
+Available after TemporalModule.forRoot(). No extra registration needed.
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { TemporalClientService } from 'nest-temporal';
+
+@Injectable()
+export class MyService {
+  constructor(private readonly temporal: TemporalClientService) {}
+}
+```
+
+Methods:
+
+```typescript
+class TemporalClientService {
+  getClient(): Client;
+  startWorkflow<T extends Workflow>(workflowType: string, workflowId: string, args: unknown[], taskQueue: string): Promise<WorkflowHandle<T>>;
+  getWorkflowHandle(workflowId: string): Promise<WorkflowHandle>;
+  queryWorkflow<T = unknown>(workflowId: string, queryType: string, ...args: unknown[]): Promise<T>;
+  signalWorkflow(workflowId: string, signalName: string, ...args: unknown[]): Promise<void>;
+  cancelWorkflow(workflowId: string): Promise<void>;
+  terminateWorkflow(workflowId: string, reason?: string): Promise<void>;
+  getWorkflowResult<T = unknown>(workflowId: string): Promise<T>;
+  getWorkflowStatus(workflowId: string): Promise<{ status: string; runId: string }>;
+}
+```
+
+Full example:
+
+```typescript
+@Injectable()
+export class OrderService {
+  constructor(private readonly temporal: TemporalClientService) {}
+
+  async placeOrder(orderId: string, email: string, amount: number) {
+    const handle = await this.temporal.startWorkflow(
+      'OrderWorkflow',          // workflow function name
+      `order-${orderId}`,       // unique workflow ID
+      [orderId, email, amount], // args array
+      'order-processing',       // task queue
+    );
+    return { workflowId: handle.workflowId };
+  }
+
+  async getOrderStatus(orderId: string) {
+    return this.temporal.getWorkflowStatus(`order-${orderId}`);
+  }
+
+  async cancelOrder(orderId: string) {
+    return this.temporal.cancelWorkflow(`order-${orderId}`);
+  }
+}
+```
+
+### WorkflowClient — task-queue-scoped client
+
+Injected via @InjectWorkflowClient(). Pre-bound to a specific task queue.
+
+Methods:
+
+```typescript
+class WorkflowClient {
+  readonly taskQueue: string;
+  start<T extends Workflow>(workflowType: string, options: WorkflowStartOptions): Promise<WorkflowHandle<T>>;
+  execute<T = unknown>(workflowType: string, options: WorkflowStartOptions): Promise<T>;
+  getHandle(workflowId: string): Promise<WorkflowHandle>;
+  query<T = unknown>(workflowId: string, queryType: string, ...args: unknown[]): Promise<T>;
+  signal(workflowId: string, signalName: string, ...args: unknown[]): Promise<void>;
+  cancel(workflowId: string): Promise<void>;
+  terminate(workflowId: string, reason?: string): Promise<void>;
+  result<T = unknown>(workflowId: string): Promise<T>;
+  describe(workflowId: string): Promise<{ status: string; runId: string }>;
+}
+```
+
+Full example:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { InjectWorkflowClient, WorkflowClient } from 'nest-temporal';
+
+@Injectable()
+export class OrderService {
+  constructor(
+    @InjectWorkflowClient('order-processing')
+    private readonly orders: WorkflowClient,
+  ) {}
+
+  async placeOrder(orderId: string, email: string, amount: number) {
+    const handle = await this.orders.start('OrderWorkflow', {
+      workflowId: `order-${orderId}`,
+      args: [orderId, email, amount],
+    });
+    return { workflowId: handle.workflowId };
+  }
+
+  // start + wait for result in one call
+  async placeOrderSync(orderId: string, email: string, amount: number) {
+    return this.orders.execute<{ success: boolean }>('OrderWorkflow', {
+      workflowId: `order-${orderId}`,
+      args: [orderId, email, amount],
+    });
+  }
+
+  async getOrderStatus(orderId: string) {
+    return this.orders.describe(`order-${orderId}`);
+  }
+
+  async cancelOrder(orderId: string) {
+    return this.orders.cancel(`order-${orderId}`);
+  }
+
+  async signalOrder(orderId: string) {
+    return this.orders.signal(`order-${orderId}`, 'approvePayment', true);
+  }
+}
+```
+
+### TemporalWorkerService — worker lifecycle (rarely used directly)
+
+```typescript
+class TemporalWorkerService {
+  getWorker(taskQueue: string): Worker | undefined;
+  getRegisteredTaskQueues(): string[];
+  shutdownWorker(taskQueue: string): Promise<void>;
+}
+```
+
+---
+
+## 5. Helper Functions
+
+### getWorkflowClientToken(taskQueue: string): string
+
+Returns the DI token for a task-queue-scoped WorkflowClient. Needed for testing.
+
+```typescript
+import { getWorkflowClientToken } from 'nest-temporal';
+
+const token = getWorkflowClientToken('orders');
+// → 'TEMPORAL_WORKFLOW_CLIENT:orders'
+```
+
+---
+
+## 6. Workflows (standard Temporal — no nest-temporal decorators)
+
+Workflows run in Temporal's sandboxed V8 isolate. They cannot use NestJS DI or import nest-temporal.
+They reference activities by name via proxyActivities().
+
+```typescript
+// workflows/order.workflow.ts
+import { proxyActivities } from '@temporalio/workflow';
+
+const { chargePayment, sendConfirmationEmail, refundPayment } = proxyActivities({
+  startToCloseTimeout: '30s',
+  retry: { maximumAttempts: 3 },
+});
+
+export async function OrderWorkflow(orderId: string, email: string, amount: number) {
+  await chargePayment(orderId, amount);
+  await sendConfirmationEmail(orderId, email);
+  return { success: true, orderId };
+}
+```
+
+The activity names in proxyActivities must match the method names (or @Activity({ name }) overrides) from your @Worker() classes.
+
+---
+
+## 7. Testing Patterns
+
+### Mocking TemporalClientService
+
+```typescript
+import { Test } from '@nestjs/testing';
+import { TemporalClientService } from 'nest-temporal';
+
+const module = await Test.createTestingModule({
+  providers: [
+    OrderService,
+    {
+      provide: TemporalClientService,
+      useValue: {
+        startWorkflow: jest.fn().mockResolvedValue({ workflowId: 'wf-1' }),
+        getWorkflowStatus: jest.fn().mockResolvedValue({ status: 'RUNNING', runId: 'run-1' }),
+        cancelWorkflow: jest.fn().mockResolvedValue(undefined),
+      },
+    },
+  ],
+}).compile();
+```
+
+### Mocking WorkflowClient (scoped)
+
+```typescript
+import { Test } from '@nestjs/testing';
+import { getWorkflowClientToken, WorkflowClient } from 'nest-temporal';
+
+const module = await Test.createTestingModule({
+  providers: [
+    OrderService,
+    {
+      provide: getWorkflowClientToken('orders'),
+      useValue: {
+        start: jest.fn().mockResolvedValue({ workflowId: 'order-1' }),
+        execute: jest.fn().mockResolvedValue({ success: true }),
+        cancel: jest.fn().mockResolvedValue(undefined),
+        describe: jest.fn().mockResolvedValue({ status: 'RUNNING', runId: 'run-1' }),
+        signal: jest.fn().mockResolvedValue(undefined),
+      } as Partial<WorkflowClient>,
+    },
+  ],
+}).compile();
+```
+
+---
+
+## 8. Complete End-to-End Example
+
+### app.module.ts
+
+```typescript
+import { Module } from '@nestjs/common';
+import { TemporalModule } from 'nest-temporal';
+import { OrderModule } from './order/order.module';
+
+@Module({
+  imports: [
+    TemporalModule.forRoot({
+      address: 'localhost:7233',
+      namespace: 'default',
+    }),
+    TemporalModule.registerClient('order-processing'),
+    OrderModule,
+  ],
+})
+export class AppModule {}
+```
+
+### order/order.activities.ts
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { Worker, Activity } from 'nest-temporal';
+import { PaymentService } from './payment.service';
+
+@Worker({
+  taskQueue: 'order-processing',
+  workflowsPath: require.resolve('./order.workflow'),
+})
+@Injectable()
+export class OrderActivities {
+  constructor(private readonly payments: PaymentService) {}
+
+  @Activity()
+  async chargePayment(orderId: string, amount: number) {
+    return this.payments.charge(orderId, amount);
+  }
+
+  @Activity()
+  async sendConfirmation(orderId: string, email: string) {
+    // send email...
+    return { sent: true };
+  }
+}
+```
+
+### order/order.workflow.ts
+
+```typescript
+import { proxyActivities } from '@temporalio/workflow';
+
+const { chargePayment, sendConfirmation } = proxyActivities({
+  startToCloseTimeout: '30s',
+});
+
+export async function OrderWorkflow(orderId: string, email: string, amount: number) {
+  await chargePayment(orderId, amount);
+  await sendConfirmation(orderId, email);
+  return { success: true };
+}
+```
+
+### order/order.service.ts
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { InjectWorkflowClient, WorkflowClient } from 'nest-temporal';
+
+@Injectable()
+export class OrderService {
+  constructor(
+    @InjectWorkflowClient('order-processing')
+    private readonly orders: WorkflowClient,
+  ) {}
+
+  async placeOrder(orderId: string, email: string, amount: number) {
+    return this.orders.start('OrderWorkflow', {
+      workflowId: `order-${orderId}`,
+      args: [orderId, email, amount],
+    });
+  }
+
+  async getStatus(orderId: string) {
+    return this.orders.describe(`order-${orderId}`);
+  }
+}
+```
+
+### order/order.module.ts
+
+```typescript
+import { Module } from '@nestjs/common';
+import { OrderActivities } from './order.activities';
+import { OrderService } from './order.service';
+import { PaymentService } from './payment.service';
+
+@Module({
+  providers: [OrderActivities, OrderService, PaymentService],
+  exports: [OrderService],
+})
+export class OrderModule {}
+```
+
+---
+
+## 9. Common Mistakes to Avoid
+
+1. NEVER import from subpaths like 'nest-temporal/services'. Always use 'nest-temporal'.
+2. @Worker() classes MUST also have @Injectable().
+3. @Worker() classes MUST be registered as NestJS providers in a module.
+4. Workflows CANNOT use NestJS DI. They run in Temporal's V8 sandbox.
+5. workflowsPath must point to the compiled JS file. Use require.resolve() at the decorator site.
+6. Activity names in proxyActivities() must match @Activity() method names or { name } overrides.
+7. @InjectWorkflowClient('x') requires TemporalModule.registerClient('x') in module imports.
+8. When mocking WorkflowClient in tests, use getWorkflowClientToken('x') as the provide token.
+9. Multiple @Worker() classes with the same taskQueue are merged into one worker — this is fine.
+10. Don't forget to pass enableWorker: false if you only need the client (no workers in this process).
+
+---
+
+## 10. BullMQ → nest-temporal Migration Cheatsheet
+
+| BullMQ code | nest-temporal equivalent |
+|---|---|
+| `BullModule.forRoot({ connection: { host, port } })` | `TemporalModule.forRoot({ address: 'host:7233' })` |
+| `BullModule.registerQueue({ name: 'audio' })` | `TemporalModule.registerClient('audio')` |
+| `@InjectQueue('audio') private queue: Queue` | `@InjectWorkflowClient('audio') private client: WorkflowClient` |
+| `await queue.add('transcode', { file })` | `await client.start('TranscodeWorkflow', { workflowId: 'tx-1', args: [{ file }] })` |
+| `await queue.add('transcode', { file }, { jobId: 'j1' })` | `await client.start('TranscodeWorkflow', { workflowId: 'j1', args: [{ file }] })` |
+| `@Processor('audio') class AudioConsumer` | `@Worker({ taskQueue: 'audio', workflowsPath: ... }) class AudioActivities` |
+| `@Process('transcode') handle(job)` | `@Activity() async transcode(file: string)` |
+| `job.data` | activity function arguments |
+| `job.id` | workflowId (passed at start time) |
