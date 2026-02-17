@@ -4,7 +4,7 @@
   <img src="https://temporal.io/favicon.svg" width="60" alt="Temporal Logo" />
 </p>
 
-<h1 align="center">nest-temporal</h1>
+<h1 align="center">nestjs-temporal</h1>
 
 <p align="center">
   A first-class <a href="https://nestjs.com/">NestJS</a> integration for <a href="https://temporal.io/">Temporal.io</a> —
